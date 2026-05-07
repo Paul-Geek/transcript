@@ -1,0 +1,696 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Transcripteur d'appel en direct</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=DM+Mono:ital,wght@0,300;0,400;0,500;1,300&family=DM+Sans:wght@300;400;500&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #0d0f11;
+    --surface: #151719;
+    --surface2: #1c1e21;
+    --border: #2a2d31;
+    --border2: #363a3f;
+    --text: #e8eaed;
+    --muted: #6b7280;
+    --hint: #374151;
+    --green: #4ade80;
+    --green-dim: #14532d;
+    --green-bg: #052010;
+    --blue: #60a5fa;
+    --blue-dim: #1e3a5f;
+    --blue-bg: #05142a;
+    --amber: #fbbf24;
+    --red: #f87171;
+    --accent: #a78bfa;
+  }
+
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    font-family: 'DM Sans', sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    min-height: 100vh;
+    display: flex;
+    align-items: flex-start;
+    justify-content: center;
+    padding: 2rem 1rem;
+  }
+
+  .app {
+    width: 100%;
+    max-width: 760px;
+  }
+
+  /* Header */
+  .top {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 2rem;
+  }
+
+  .logo {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+
+  .logo-icon {
+    width: 36px;
+    height: 36px;
+    border-radius: 10px;
+    background: linear-gradient(135deg, var(--accent) 0%, #7c3aed 100%);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .logo-icon svg { width: 18px; height: 18px; color: white; }
+
+  .logo-text {
+    font-family: 'DM Mono', monospace;
+    font-size: 15px;
+    font-weight: 500;
+    letter-spacing: -0.02em;
+  }
+
+  .live-badge {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 5px 12px;
+    border-radius: 20px;
+    border: 1px solid var(--border);
+    font-family: 'DM Mono', monospace;
+    font-size: 11px;
+    font-weight: 500;
+    color: var(--muted);
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    transition: all 0.3s;
+  }
+
+  .live-badge.active {
+    border-color: var(--green);
+    color: var(--green);
+    background: var(--green-bg);
+  }
+
+  .live-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: currentColor;
+  }
+
+  .live-badge.active .live-dot {
+    animation: blink 1s infinite;
+  }
+
+  @keyframes blink { 0%,100%{opacity:1} 50%{opacity:0.2} }
+
+  /* API key section */
+  .api-section {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    padding: 1.25rem 1.5rem;
+    margin-bottom: 1.25rem;
+  }
+
+  .section-label {
+    font-family: 'DM Mono', monospace;
+    font-size: 10px;
+    font-weight: 500;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    color: var(--muted);
+    margin-bottom: 0.75rem;
+  }
+
+  .api-row {
+    display: flex;
+    gap: 8px;
+  }
+
+  .api-row input {
+    flex: 1;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 9px 14px;
+    font-family: 'DM Mono', monospace;
+    font-size: 13px;
+    color: var(--text);
+    outline: none;
+    transition: border-color 0.2s;
+  }
+
+  .api-row input:focus { border-color: var(--accent); }
+  .api-row input::placeholder { color: var(--hint); }
+
+  .btn {
+    padding: 9px 18px;
+    border-radius: 8px;
+    border: 1px solid var(--border2);
+    background: var(--surface2);
+    color: var(--text);
+    font-family: 'DM Sans', sans-serif;
+    font-size: 13px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.15s;
+    white-space: nowrap;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+
+  .btn:hover { background: var(--border); }
+  .btn:active { transform: scale(0.98); }
+  .btn:disabled { opacity: 0.35; cursor: not-allowed; transform: none; }
+
+  .btn-start {
+    background: #052010;
+    border-color: var(--green-dim);
+    color: var(--green);
+  }
+  .btn-start:hover { background: #083018; }
+
+  .btn-stop {
+    background: #2a0808;
+    border-color: #7f1d1d;
+    color: var(--red);
+  }
+  .btn-stop:hover { background: #350b0b; }
+
+  /* Controls */
+  .controls {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 1.25rem;
+    flex-wrap: wrap;
+  }
+
+  /* Speakers */
+  .speakers {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+    margin-bottom: 1.25rem;
+  }
+
+  .speaker-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 12px 16px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    transition: border-color 0.3s, background 0.3s;
+  }
+
+  .speaker-card.talking-a {
+    border-color: var(--green-dim);
+    background: var(--green-bg);
+  }
+
+  .speaker-card.talking-b {
+    border-color: var(--blue-dim);
+    background: var(--blue-bg);
+  }
+
+  .speaker-avatar {
+    width: 32px;
+    height: 32px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-family: 'DM Mono', monospace;
+    font-size: 12px;
+    font-weight: 500;
+    flex-shrink: 0;
+  }
+
+  .avatar-a { background: var(--green-dim); color: var(--green); }
+  .avatar-b { background: var(--blue-dim); color: var(--blue); }
+
+  .speaker-info { flex: 1; }
+
+  .speaker-name {
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--text);
+    margin-bottom: 2px;
+  }
+
+  .speaker-wc {
+    font-family: 'DM Mono', monospace;
+    font-size: 11px;
+    color: var(--muted);
+  }
+
+  .waveform {
+    display: flex;
+    align-items: center;
+    gap: 2px;
+    height: 16px;
+    opacity: 0;
+    transition: opacity 0.2s;
+  }
+
+  .waveform.active { opacity: 1; }
+
+  .waveform span {
+    width: 2px;
+    background: currentColor;
+    border-radius: 1px;
+    animation: wave 0.6s ease-in-out infinite;
+  }
+
+  .waveform span:nth-child(1) { height: 4px; animation-delay: 0s; }
+  .waveform span:nth-child(2) { height: 10px; animation-delay: 0.1s; }
+  .waveform span:nth-child(3) { height: 16px; animation-delay: 0.2s; }
+  .waveform span:nth-child(4) { height: 10px; animation-delay: 0.3s; }
+  .waveform span:nth-child(5) { height: 4px; animation-delay: 0.4s; }
+
+  @keyframes wave {
+    0%,100% { transform: scaleY(1); }
+    50% { transform: scaleY(0.3); }
+  }
+
+  /* Status */
+  .status-bar {
+    font-family: 'DM Mono', monospace;
+    font-size: 12px;
+    color: var(--muted);
+    margin-bottom: 1rem;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    min-height: 18px;
+  }
+
+  /* Transcript */
+  .transcript-box {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    padding: 1.25rem;
+    min-height: 300px;
+    max-height: 460px;
+    overflow-y: auto;
+    scrollbar-width: thin;
+    scrollbar-color: var(--border) transparent;
+  }
+
+  .empty-state {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    height: 240px;
+    gap: 12px;
+    color: var(--hint);
+  }
+
+  .empty-state svg { width: 32px; height: 32px; opacity: 0.4; }
+  .empty-state p { font-size: 14px; }
+
+  .transcript-line {
+    display: flex;
+    gap: 12px;
+    padding: 8px 0;
+    border-bottom: 1px solid var(--border);
+    align-items: flex-start;
+    animation: fadeIn 0.2s ease;
+  }
+
+  .transcript-line:last-child { border-bottom: none; }
+
+  @keyframes fadeIn { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
+
+  .line-tag {
+    font-family: 'DM Mono', monospace;
+    font-size: 10px;
+    font-weight: 500;
+    padding: 3px 8px;
+    border-radius: 20px;
+    white-space: nowrap;
+    margin-top: 3px;
+    flex-shrink: 0;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+  }
+
+  .tag-a { background: var(--green-dim); color: var(--green); }
+  .tag-b { background: var(--blue-dim); color: var(--blue); }
+  .tag-u { background: var(--hint); color: var(--muted); }
+
+  .line-text {
+    font-size: 14px;
+    line-height: 1.65;
+    color: var(--text);
+    flex: 1;
+  }
+
+  .line-text.interim {
+    color: var(--muted);
+    font-style: italic;
+  }
+
+  /* Footer */
+  .footer {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-top: 12px;
+  }
+
+  .stats {
+    display: flex;
+    gap: 16px;
+  }
+
+  .stat {
+    font-family: 'DM Mono', monospace;
+    font-size: 11px;
+    color: var(--muted);
+  }
+
+  .stat span { color: var(--text); }
+
+  .actions { display: flex; gap: 6px; }
+
+  /* Note */
+  .note {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-left: 3px solid var(--accent);
+    border-radius: 10px;
+    padding: 12px 16px;
+    margin-bottom: 1.25rem;
+    font-size: 13px;
+    line-height: 1.6;
+    color: var(--muted);
+  }
+
+  .note a { color: var(--accent); text-decoration: none; }
+  .note a:hover { text-decoration: underline; }
+  .note strong { color: var(--text); font-weight: 500; }
+</style>
+</head>
+<body>
+<div class="app">
+
+  <div class="top">
+    <div class="logo">
+      <div class="logo-icon">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/>
+          <path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
+          <line x1="12" y1="19" x2="12" y2="23"/>
+          <line x1="8" y1="23" x2="16" y2="23"/>
+        </svg>
+      </div>
+      <span class="logo-text">voicetranscript</span>
+    </div>
+    <div class="live-badge" id="liveBadge">
+      <div class="live-dot"></div>
+      <span>standby</span>
+    </div>
+  </div>
+
+  <div class="note">
+    <strong>Clé AssemblyAI requise</strong> — Gratuit sur <a href="https://www.assemblyai.com" target="_blank">assemblyai.com</a>.
+    Pour transcrire 2 intervenants d'un vrai appel, active le <strong>son système</strong> (loopback) sur ton ordi
+    — <a href="https://github.com/ExistentialAudio/BlackHole" target="_blank">BlackHole</a> (Mac) ou Stereo Mix (Windows).
+  </div>
+
+  <div class="api-section">
+    <div class="section-label">Authentification</div>
+    <div class="api-row">
+      <input type="password" id="apiKey" placeholder="AssemblyAI API key..." autocomplete="off" />
+      <button class="btn" onclick="saveKey()" id="saveBtn">Valider</button>
+    </div>
+  </div>
+
+  <div class="controls">
+    <button class="btn btn-start" onclick="startSession()" id="startBtn" disabled>
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><polygon points="5,3 19,12 5,21"/></svg>
+      Démarrer
+    </button>
+    <button class="btn btn-stop" onclick="stopSession()" id="stopBtn" disabled>
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="6" width="12" height="12"/></svg>
+      Arrêter
+    </button>
+    <button class="btn" onclick="clearTranscript()" id="clearBtn">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/></svg>
+      Effacer
+    </button>
+    <button class="btn" onclick="copyTranscript()">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+      Copier
+    </button>
+    <button class="btn" onclick="downloadTxt()">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+      .txt
+    </button>
+  </div>
+
+  <div class="speakers">
+    <div class="speaker-card" id="cardA">
+      <div class="speaker-avatar avatar-a">A</div>
+      <div class="speaker-info">
+        <div class="speaker-name">Intervenant A</div>
+        <div class="speaker-wc" id="wcA">0 mots</div>
+      </div>
+      <div class="waveform" id="waveA" style="color: var(--green)">
+        <span></span><span></span><span></span><span></span><span></span>
+      </div>
+    </div>
+    <div class="speaker-card" id="cardB">
+      <div class="speaker-avatar avatar-b">B</div>
+      <div class="speaker-info">
+        <div class="speaker-name">Intervenant B</div>
+        <div class="speaker-wc" id="wcB">0 mots</div>
+      </div>
+      <div class="waveform" id="waveB" style="color: var(--blue)">
+        <span></span><span></span><span></span><span></span><span></span>
+      </div>
+    </div>
+  </div>
+
+  <div class="status-bar" id="status">
+    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+    En attente de la clé API...
+  </div>
+
+  <div class="transcript-box" id="transcript">
+    <div class="empty-state" id="emptyState">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+      <p>La transcription apparaîtra ici</p>
+    </div>
+  </div>
+
+  <div class="footer">
+    <div class="stats">
+      <div class="stat">Total <span id="totalWords">0</span> mots</div>
+      <div class="stat">Lignes <span id="lineCount">0</span></div>
+    </div>
+    <div class="actions"></div>
+  </div>
+
+</div>
+
+<script>
+let apiKey = '';
+let socket = null;
+let audioStream = null;
+let lines = [];
+let wordCountA = 0;
+let wordCountB = 0;
+const INTERIM_ID = 'interim-line';
+
+function saveKey() {
+  const val = document.getElementById('apiKey').value.trim();
+  if (!val) return;
+  apiKey = val;
+  document.getElementById('startBtn').disabled = false;
+  setStatus('Clé validée — prêt à démarrer.');
+}
+
+document.getElementById('apiKey').addEventListener('keydown', e => { if (e.key === 'Enter') saveKey(); });
+
+async function startSession() {
+  if (!apiKey) { alert('Entre ta clé AssemblyAI.'); return; }
+  document.getElementById('startBtn').disabled = true;
+  setStatus('Connexion à AssemblyAI...');
+  try {
+    const res = await fetch('https://api.assemblyai.com/v2/realtime/token', {
+      method: 'POST',
+      headers: { authorization: apiKey, 'content-type': 'application/json' },
+      body: JSON.stringify({ expires_in: 3600 })
+    });
+    const data = await res.json();
+    if (!data.token) throw new Error(data.error || 'Token invalide');
+
+    audioStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+
+    socket = new WebSocket(
+      `wss://api.assemblyai.com/v2/realtime/ws?sample_rate=16000&token=${data.token}&speaker_labels=true&language_code=fr`
+    );
+
+    socket.onopen = () => {
+      setLive(true);
+      document.getElementById('stopBtn').disabled = false;
+      setStatus('En direct — parlez...');
+      startAudio();
+    };
+
+    socket.onmessage = e => handleMsg(JSON.parse(e.data));
+
+    socket.onerror = () => { setStatus('Erreur WebSocket. Vérifie la clé.'); stopSession(); };
+
+    socket.onclose = () => { setLive(false); setStatus('Session terminée.'); };
+
+  } catch(err) {
+    setStatus('Erreur : ' + err.message);
+    document.getElementById('startBtn').disabled = false;
+  }
+}
+
+function startAudio() {
+  const ctx = new AudioContext({ sampleRate: 16000 });
+  const src = ctx.createMediaStreamSource(audioStream);
+  const proc = ctx.createScriptProcessor(4096, 1, 1);
+  src.connect(proc);
+  proc.connect(ctx.destination);
+  proc.onaudioprocess = e => {
+    if (!socket || socket.readyState !== WebSocket.OPEN) return;
+    const inp = e.inputBuffer.getChannelData(0);
+    const pcm = new Int16Array(inp.length);
+    for (let i = 0; i < inp.length; i++) pcm[i] = Math.max(-32768, Math.min(32767, inp[i] * 32768));
+    socket.send(pcm.buffer);
+  };
+  window._ctx = ctx; window._proc = proc; window._src = src;
+}
+
+function handleMsg(msg) {
+  if (msg.message_type === 'PartialTranscript') {
+    if (!msg.text) return;
+    const spk = msg.words && msg.words[0] ? msg.words[0].speaker : null;
+    removeInterim();
+    addInterim(msg.text, spk);
+    setSpeaking(spk);
+  } else if (msg.message_type === 'FinalTranscript') {
+    removeInterim();
+    if (!msg.text) return;
+    const spk = msg.words && msg.words[0] ? msg.words[0].speaker : null;
+    const wc = msg.text.split(/\s+/).filter(Boolean).length;
+    if (spk === 'A') wordCountA += wc;
+    else if (spk === 'B') wordCountB += wc;
+    lines.push({ text: msg.text, speaker: spk });
+    renderLines();
+    updateStats();
+    setSpeaking(null);
+  }
+}
+
+function addInterim(text, speaker) {
+  const box = document.getElementById('transcript');
+  hideEmpty();
+  const div = document.createElement('div');
+  div.className = 'transcript-line';
+  div.id = INTERIM_ID;
+  div.innerHTML = `<span class="line-tag ${tagClass(speaker)}">${tagLabel(speaker)}</span><span class="line-text interim">${esc(text)}</span>`;
+  box.appendChild(div);
+  box.scrollTop = box.scrollHeight;
+}
+
+function removeInterim() {
+  const el = document.getElementById(INTERIM_ID);
+  if (el) el.remove();
+}
+
+function renderLines() {
+  const box = document.getElementById('transcript');
+  box.querySelectorAll('.transcript-line:not(#' + INTERIM_ID + ')').forEach(el => el.remove());
+  hideEmpty();
+  lines.forEach(l => {
+    const div = document.createElement('div');
+    div.className = 'transcript-line';
+    div.innerHTML = `<span class="line-tag ${tagClass(l.speaker)}">${tagLabel(l.speaker)}</span><span class="line-text">${esc(l.text)}</span>`;
+    box.appendChild(div);
+  });
+  box.scrollTop = box.scrollHeight;
+}
+
+function tagClass(s) { return s === 'A' ? 'tag-a' : s === 'B' ? 'tag-b' : 'tag-u'; }
+function tagLabel(s) { return s ? 'Int. ' + s : '—'; }
+function hideEmpty() { const e = document.getElementById('emptyState'); if (e) e.style.display = 'none'; }
+
+function setSpeaking(spk) {
+  document.getElementById('waveA').classList.toggle('active', spk === 'A');
+  document.getElementById('waveB').classList.toggle('active', spk === 'B');
+  document.getElementById('cardA').classList.toggle('talking-a', spk === 'A');
+  document.getElementById('cardB').classList.toggle('talking-b', spk === 'B');
+}
+
+function updateStats() {
+  document.getElementById('wcA').textContent = wordCountA + ' mot' + (wordCountA > 1 ? 's' : '');
+  document.getElementById('wcB').textContent = wordCountB + ' mot' + (wordCountB > 1 ? 's' : '');
+  const total = lines.reduce((a, l) => a + l.text.split(/\s+/).filter(Boolean).length, 0);
+  document.getElementById('totalWords').textContent = total;
+  document.getElementById('lineCount').textContent = lines.length;
+}
+
+function stopSession() {
+  if (socket) { socket.close(); socket = null; }
+  if (audioStream) { audioStream.getTracks().forEach(t => t.stop()); audioStream = null; }
+  if (window._proc) { window._proc.disconnect(); }
+  if (window._ctx) { window._ctx.close(); }
+  document.getElementById('stopBtn').disabled = true;
+  document.getElementById('startBtn').disabled = false;
+  setSpeaking(null);
+}
+
+function clearTranscript() {
+  lines = []; wordCountA = 0; wordCountB = 0;
+  const box = document.getElementById('transcript');
+  box.innerHTML = '<div class="empty-state" id="emptyState"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg><p>La transcription apparaîtra ici</p></div>';
+  updateStats();
+}
+
+function copyTranscript() {
+  const txt = lines.map(l => `[${l.speaker ? 'Intervenant ' + l.speaker : '?'}] ${l.text}`).join('\n');
+  navigator.clipboard.writeText(txt);
+}
+
+function downloadTxt() {
+  const txt = lines.map(l => `[${l.speaker ? 'Intervenant ' + l.speaker : '?'}] ${l.text}`).join('\n');
+  const a = Object.assign(document.createElement('a'), {
+    href: URL.createObjectURL(new Blob([txt], { type: 'text/plain' })),
+    download: 'transcription_' + new Date().toISOString().slice(0,16).replace('T','_') + '.txt'
+  });
+  a.click();
+}
+
+function setLive(on) {
+  const b = document.getElementById('liveBadge');
+  b.classList.toggle('active', on);
+  b.querySelector('span').textContent = on ? 'live' : 'standby';
+}
+
+function setStatus(msg) { document.getElementById('status').innerHTML = `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg> ${msg}`; }
+
+function esc(s) { return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+</script>
+</body>
+</html>
