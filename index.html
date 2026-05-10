@@ -207,12 +207,6 @@ canvas#viz{width:100%;height:100%;display:none;}
 .a-loading{text-align:center;padding:40px;color:var(--muted);font-family:var(--mono);font-size:12px;}
 .a-empty{text-align:center;padding:60px 20px;color:var(--muted);font-size:13px;line-height:1.8;}
 
-/* ── Claude key section ── */
-.claude-key-row{display:flex;gap:8px;margin-top:4px;}
-.claude-key-input{flex:1;background:var(--bg);border:1px solid var(--border);border-radius:6px;color:var(--text);font-family:var(--mono);font-size:13px;padding:7px 12px;outline:none;transition:border-color 0.2s;}
-.claude-key-input:focus{border-color:var(--accent);}
-.claude-key-input.valid{border-color:var(--accent);}
-
 /* View mode */
 .view-mode .key-section,.view-mode .controls,.view-mode .viz-wrap{display:none!important;}
 .recorder-view{display:flex;flex-direction:column;gap:18px;flex:1;}
@@ -272,14 +266,6 @@ canvas#viz{width:100%;height:100%;display:none;}
           </div>
           <div class="key-hint" style="margin-top:5px;">Gratuit sur <a href="https://console.deepgram.com" target="_blank">console.deepgram.com</a></div>
         </div>
-        <div class="key-field">
-          <div class="key-label">Clé API Claude (résumés)</div>
-          <div class="claude-key-row">
-            <input type="password" class="claude-key-input" id="claudeKey" placeholder="Anthropic API key…" autocomplete="off"/>
-            <button onclick="validateClaudeKey()">Valider</button>
-          </div>
-          <div class="key-hint" style="margin-top:5px;">Gratuit sur <a href="https://console.anthropic.com" target="_blank">console.anthropic.com</a></div>
-        </div>
       </div>
     </div>
 
@@ -336,7 +322,7 @@ canvas#viz{width:100%;height:100%;display:none;}
       <!-- Summary panel -->
       <div class="summary-panel" id="summaryPanel" style="display:none">
         <div class="summary-header">
-          <span class="summary-label">✦ Résumé Claude</span>
+          <span class="summary-label">✦ Résumé automatique</span>
           <div class="summary-actions">
             <button onclick="rerunSummary()" id="btnRerunSummary" style="display:none">↻ Relancer</button>
             <button onclick="copySummary()">Copier</button>
@@ -357,7 +343,7 @@ canvas#viz{width:100%;height:100%;display:none;}
 // ── State ──
 let ws=null,stream=null,audioCtx=null,analyser=null;
 let animFrame=null,timerInterval=null,startTime=null;
-let dgKey='',claudeKey='',utterances=[],wordCount=0,speakerSet=new Set();
+let dgKey='',utterances=[],wordCount=0,speakerSet=new Set();
 let currentSessionId=null,isViewingHistory=false,sessionDuration='—';
 let showingAnalytics=false;
 const LABELS=['A','B','C','D','E','F'];
@@ -442,9 +428,7 @@ function saveCurrentSession(summary){
 
 // ── Keys ──
 function validateKey(){const v=$('apiKey').value.trim();if(v.length<10){showError('Clé Deepgram invalide.');return;}dgKey=v;$('apiKey').classList.add('valid');$('btnStart').disabled=false;hideError();}
-function validateClaudeKey(){const v=$('claudeKey').value.trim();if(v.length<10){showError('Clé Claude invalide.');return;}claudeKey=v;$('claudeKey').classList.add('valid');hideError();}
 $('apiKey').addEventListener('keydown',e=>{if(e.key==='Enter')validateKey();});
-$('claudeKey').addEventListener('keydown',e=>{if(e.key==='Enter')validateClaudeKey();});
 function showError(m){$('errorMsg').textContent=m;$('errorMsg').style.display='block';}
 function hideError(){$('errorMsg').style.display='none';}
 
@@ -554,33 +538,77 @@ function startViz(){
 }
 function stopViz(){if(animFrame)cancelAnimationFrame(animFrame);$('viz').style.display='none';$('vizIdle').style.display='flex';}
 
-// ── Claude Summary ──
-async function runSummary(){
-  if(!claudeKey){$('summaryPanel').style.display='none';$('panels').classList.remove('with-summary');return;}
+// ── Résumé local (100% JS, sans API externe) ──
+function runSummary(){
   if(!utterances.length)return;
   $('panels').classList.add('with-summary');
   $('summaryPanel').style.display='flex';
   $('btnRerunSummary').style.display='none';
-  $('summaryBody').innerHTML=`<div class="summary-loading"><div class="summary-loading-dots"><div class="dot-pulse"></div><div class="dot-pulse"></div><div class="dot-pulse"></div></div><p>Claude analyse l'appel…</p></div>`;
-  const transcript=utterances.map(u=>`[Intervenant ${LABELS[u.speaker]||u.speaker}]: ${u.text}`).join('\n');
-  const prompt=`Voici la transcription d'un appel avec ${speakerSet.size} intervenant(s), durée ${sessionDuration}.\n\nTRANSCRIPTION:\n${transcript}\n\nGénère un résumé structuré en JSON avec exactement ces champs:\n{\n  "theme": "sujet principal en 1 phrase",\n  "points": ["point clé 1", "point clé 2", ...],\n  "decisions": ["décision 1", ...] ou [],\n  "actions": ["action à faire 1", ...] ou [],\n  "tone": "positif" | "neutre" | "tendu" | "formel",\n  "speakers": [{"label":"A","percent":60}, {"label":"B","percent":40}]\n}\nRéponds UNIQUEMENT avec le JSON, sans markdown ni texte autour.`;
-  try{
-    const res=await fetch('https://api.anthropic.com/v1/messages',{
-      method:'POST',
-      headers:{'Content-Type':'application/json','x-api-key':claudeKey,'anthropic-version':'2023-06-01','anthropic-dangerous-direct-browser-access':'true'},
-      body:JSON.stringify({model:'claude-sonnet-4-20250514',max_tokens:1000,messages:[{role:'user',content:prompt}]})
-    });
-    const data=await res.json();
-    if(!res.ok)throw new Error(data.error?.message||'Erreur API');
-    const raw=data.content[0].text.replace(/```json|```/g,'').trim();
-    const summary=JSON.parse(raw);
-    showSummary(summary);
-    saveCurrentSession(summary);
-    $('btnRerunSummary').style.display='inline-block';
-  }catch(e){
-    $('summaryBody').innerHTML=`<div class="summary-error">Erreur lors du résumé : ${e.message}.<br>Vérifie ta clé Claude.</div>`;
-    $('btnRerunSummary').style.display='inline-block';
-  }
+  $('summaryBody').innerHTML=`<div class="summary-loading"><div class="summary-loading-dots"><div class="dot-pulse"></div><div class="dot-pulse"></div><div class="dot-pulse"></div></div><p>Analyse en cours…</p></div>`;
+  // Légère pause pour laisser le DOM se mettre à jour
+  setTimeout(()=>{
+    try{
+      const summary=analyzeLocally();
+      showSummary(summary);
+      saveCurrentSession(summary);
+      $('btnRerunSummary').style.display='inline-block';
+    }catch(e){
+      $('summaryBody').innerHTML=`<div class="summary-error">Erreur lors de l'analyse : ${e.message}</div>`;
+      $('btnRerunSummary').style.display='inline-block';
+    }
+  },200);
+}
+
+function analyzeLocally(){
+  const fullText=utterances.map(u=>u.text).join(' ');
+  const words=fullText.toLowerCase().split(/\s+/).filter(w=>w.length>3);
+
+  // ── Thème : mots les plus fréquents (hors stopwords) ──
+  const stopwords=new Set(['pour','dans','avec','mais','vous','nous','ils','elles','est','sont','être','avoir','fait','cette','tout','bien','plus','très','aussi','même','donc','alors','quand','comme','parce','après','avant','pendant','entre','depuis','vers','chez','sans','sous','contre','leur','leurs','votre','notre','vos','nos','mes','ses','une','des','les','que','qui','quoi','dont','où','comment','pourquoi','ainsi','encore','toujours','jamais','déjà','maintenant','aujourd','hier','demain','dire','faire','aller','venir','voir','savoir','pouvoir','vouloir','devoir','falloir','avoir','être','prendre','mettre','donner','trouver','appeler','partir','rester','passer','tenir','porter','montrer','sembler','laisser','suivre','sentir','servir','attendre','vivre']);
+  const freq={};
+  words.forEach(w=>{const clean=w.replace(/[^a-zàâéèêëîïôùûüç]/g,'');if(clean.length>3&&!stopwords.has(clean))freq[clean]=(freq[clean]||0)+1;});
+  const topWords=Object.entries(freq).sort((a,b)=>b[1]-a[1]).slice(0,8).map(e=>e[0]);
+  const theme=topWords.length?`Discussion portant sur : ${topWords.slice(0,4).join(', ')}`:utterances[0]?.text?.slice(0,80)||'Contenu audio';
+
+  // ── Points clés : phrases les plus longues et informatives ──
+  const sentences=fullText.match(/[^.!?]+[.!?]*/g)||[fullText];
+  const scored=sentences
+    .map(s=>s.trim())
+    .filter(s=>s.split(' ').length>6&&s.split(' ').length<40)
+    .map(s=>({
+      text:s,
+      score:topWords.reduce((sc,w)=>sc+(s.toLowerCase().includes(w)?2:0),0)+s.split(' ').length*0.1
+    }))
+    .sort((a,b)=>b.score-a.score);
+  const points=[...new Set(scored.slice(0,5).map(s=>s.text.trim()))].slice(0,4);
+
+  // ── Décisions : phrases avec marqueurs décisionnels ──
+  const decisionMarkers=['décidé','décision','convenu','accord','validé','approuvé','confirmé','retenu','choisi','opté','tranché','conclusion'];
+  const decisions=sentences.filter(s=>decisionMarkers.some(m=>s.toLowerCase().includes(m))).slice(0,3).map(s=>s.trim());
+
+  // ── Actions : phrases avec marqueurs d'action ──
+  const actionMarkers=["il faut","faudra","devra","doit","on va","je vais","nous allons","à faire","à envoyer","à contacter","à préparer","à vérifier","à prévoir","rappeler","envoyer","préparer","contacter","planifier","organiser","suivre","relancer"];
+  const actions=sentences.filter(s=>actionMarkers.some(m=>s.toLowerCase().includes(m))).slice(0,4).map(s=>s.trim());
+
+  // ── Tonalité : analyse lexicale ──
+  const positifWords=['merci','super','excellent','parfait','bravo','génial','bien','accord','content','ravi','satisfait','top','ok','oui','absolument'];
+  const tenduWords=['problème','difficile','urgent','grave','impossible','jamais','non','refus','plainte','erreur','retard','bloqué','incident','souci'];
+  const formelWords=['monsieur','madame','veuillez','permettez','sollicite','cordialement','conformément','référence','dossier','contrat','procédure'];
+  const lc=fullText.toLowerCase();
+  const posScore=positifWords.filter(w=>lc.includes(w)).length;
+  const tenScore=tenduWords.filter(w=>lc.includes(w)).length;
+  const forScore=formelWords.filter(w=>lc.includes(w)).length;
+  let tone='neutre';
+  const max=Math.max(posScore,tenScore,forScore);
+  if(max>0){if(forScore===max)tone='formel';else if(tenScore===max)tone='tendu';else if(posScore===max)tone='positif';}
+
+  // ── Répartition des intervenants ──
+  const spWordCounts={};
+  utterances.forEach(u=>{const wc=u.text.split(/\s+/).filter(Boolean).length;spWordCounts[u.speaker]=(spWordCounts[u.speaker]||0)+wc;});
+  const total=Object.values(spWordCounts).reduce((s,v)=>s+v,0)||1;
+  const speakers=Object.entries(spWordCounts).map(([sp,wc])=>({label:LABELS[sp]||String(Number(sp)+1),percent:Math.round(wc/total*100)})).sort((a,b)=>b.percent-a.percent);
+
+  return{theme,points,decisions,actions,tone,speakers};
 }
 
 function rerunSummary(){runSummary();}
@@ -622,22 +650,7 @@ function toggleAnalytics(){
 async function generateAnalytics(){
   const hist=loadHistory();
   if(!hist.length){$('analyticsContent').innerHTML='<div class="a-empty">Aucun appel enregistré pour l\'instant.</div>';return;}
-  if(!claudeKey){renderAnalyticsStatic(hist);return;}
-  $('analyticsContent').innerHTML='<div class="a-loading"><div style="display:flex;gap:6px;justify-content:center;margin-bottom:10px"><div class="dot-pulse"></div><div class="dot-pulse"></div><div class="dot-pulse"></div></div>Claude analyse tous tes appels…</div>';
-  const summaries=hist.filter(s=>s.summary).map(s=>`Appel "${s.name}" (${new Date(s.createdAt).toLocaleDateString('fr-FR')}, ${s.duration}, ${s.wordCount} mots) — thème: ${s.summary.theme} — ton: ${s.summary.tone} — actions: ${(s.summary.actions||[]).join(', ')||'aucune'}`).join('\n');
-  const rawTexts=hist.slice(0,5).map(s=>(s.utterances||[]).map(u=>u.text).join(' ')).join('\n');
-  const prompt=`Voici l'historique de ${hist.length} appels téléphoniques transcrits.\n\nRÉSUMÉS DISPONIBLES:\n${summaries||'Aucun résumé disponible.'}\n\nEXTRAITS BRUTS:\n${rawTexts}\n\nGénère une analyse globale en JSON:\n{\n  "totalWords": 1234,\n  "avgDuration": "12:30",\n  "topTopics": ["sujet1","sujet2","sujet3","sujet4","sujet5"],\n  "toneDistribution": {"positif":3,"neutre":2,"tendu":1,"formel":0},\n  "insight": "observation clé en 1-2 phrases sur les tendances",\n  "topActions": ["action récurrente 1","action récurrente 2"]\n}\nRéponds UNIQUEMENT avec le JSON, sans markdown.`;
-  try{
-    const res=await fetch('https://api.anthropic.com/v1/messages',{
-      method:'POST',
-      headers:{'Content-Type':'application/json','x-api-key':claudeKey,'anthropic-version':'2023-06-01','anthropic-dangerous-direct-browser-access':'true'},
-      body:JSON.stringify({model:'claude-sonnet-4-20250514',max_tokens:800,messages:[{role:'user',content:prompt}]})
-    });
-    const data=await res.json();
-    if(!res.ok)throw new Error(data.error?.message||'Erreur API');
-    const ai=JSON.parse(data.content[0].text.replace(/```json|```/g,'').trim());
-    renderAnalyticsAI(hist,ai);
-  }catch(e){renderAnalyticsStatic(hist);}
+  renderAnalyticsStatic(hist);
 }
 
 function renderAnalyticsStatic(hist){
@@ -662,10 +675,9 @@ function renderAnalyticsAI(hist,ai){
     <div class="analytics-grid">
       <div class="a-card"><div class="a-card-val">${hist.length}</div><div class="a-card-lbl">Appels total</div></div>
       <div class="a-card"><div class="a-card-val">${totalWords.toLocaleString('fr-FR')}</div><div class="a-card-lbl">Mots transcrits</div></div>
-      <div class="a-card"><div class="a-card-val">${withSummary}</div><div class="a-card-lbl">Résumés Claude</div></div>
+      <div class="a-card"><div class="a-card-val">${withSummary}</div><div class="a-card-lbl">Résumés LeMUR</div></div>
       <div class="a-card"><div class="a-card-val">${ai.avgDuration||'—'}</div><div class="a-card-lbl">Durée moyenne</div></div>
     </div>
-    ${ai.insight?`<div class="a-section"><div class="a-section-title">Insight Claude</div><div style="font-size:14px;line-height:1.7;color:var(--text);font-style:italic;">"${ai.insight}"</div></div>`:''}
     ${topicsHtml?`<div class="a-section"><div class="a-section-title">Sujets récurrents</div><div class="a-topic-list">${topicsHtml}</div></div>`:''}
     ${tonesHtml?`<div class="a-section"><div class="a-section-title">Tonalités</div><div class="a-topic-list">${tonesHtml}</div></div>`:''}
     ${actionsHtml?`<div class="a-section"><div class="a-section-title">Actions récurrentes</div><div class="s-list">${actionsHtml}</div></div>`:''}
